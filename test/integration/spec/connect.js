@@ -6,9 +6,10 @@ if (typeof window === 'undefined') {
 
 const assert = require('assert');
 const connect = require('../../../lib/connect');
+const createLocalTracks = require('../../../lib/createlocaltracks');
 const getToken = require('../../lib/token');
 const CancelablePromise = require('../../../lib/util/cancelablepromise');
-const { combinationContext, participantsConnected, pairs, randomName, tracksAdded } = require('../../lib/util');
+const { capitalize, combinationContext, participantsConnected, pairs, randomName, tracksAdded } = require('../../lib/util');
 const env = require('../../env');
 const Room = require('../../../lib/room');
 const { flatMap } = require('../../../lib/util');
@@ -136,11 +137,13 @@ describe('connect', function() {
     let name;
     let cancelablePromises;
     let rooms;
+    let tracks;
 
     before(async () => {
       identities = Array.from(Array(n).keys()).map(() => randomName());
+      tracks = await createLocalTracks();
       const tokens = identities.map(getToken);
-      const options = Object.assign({}, defaultOptions);
+      const options = Object.assign({ tracks }, defaultOptions);
       if (withoutTracks) {
         options.tracks = [];
       }
@@ -175,12 +178,41 @@ describe('connect', function() {
       it(`should set ${n === 1 ? 'the' : 'each'} Room\'s LocalParticipant's .sid to a ${n === 1 ? '' : 'unique '}Participant SID`, () => {
         const sids = new Set(rooms.map(room => room.localParticipant.sid));
         assert.equal(sids.size, n);
-        sids.forEach(sid => sid.match(/^PA[a-f0-9]{32}$/));
+        sids.forEach(sid => assert(sid.match(/^PA[a-f0-9]{32}$/)));
       });
 
       it(`should set ${n === 1 ? 'the' : 'each'} Room's LocalParticipant's .identity to the specified ${n === 1 ? 'identity' : 'identities'}`, () => {
         rooms.forEach((room, i) => assert.equal(room.localParticipant.identity, identities[i]));
       });
+
+      if (!withoutTracks) {
+        it(`should update ${n === 1 ? 'the' : 'each'} Room's LocalParticipant's .tracks Map with the LocalTracks`, () => {
+          rooms.forEach(room => assert.deepEqual(Array.from(room.localParticipant.tracks.values()), tracks));
+        });
+
+        [ 'tracks', 'audioTracks', 'videoTracks' ].forEach(tracks => {
+          var publishedTracks = `published${capitalize(tracks)}`;
+
+          it(`should update ${n === 1 ? 'the' : 'each'} Room's LocalParticipant's .${publishedTracks} Map with the corresponding ${capitalize(publishedTracks)}`, () => {
+            rooms.forEach(room => {
+              assert.equal(room.localParticipant[tracks].size, room.localParticipant[publishedTracks].size);
+              room.localParticipant[tracks].forEach(track => {
+                var publishedTrack = room.localParticipant[publishedTracks].get(track.id);
+                assert(publishedTrack);
+                assert.equal(publishedTrack.id, track.id);
+                assert.equal(publishedTrack.kind, track.kind);
+              });
+            });
+          });
+
+          it(`should set ${n === 1 ? 'the' : 'each'} Room\'s LocalParticipant's ${capitalize(publishedTracks)}' .sid to a unique Track SID`, () => {
+            rooms.forEach(room => {
+              var tracks = room.localParticipant[publishedTracks];
+              tracks.forEach(track => assert(track.sid.match(/^MT[a-f0-9]{32}$/)));
+            });
+          });
+        });
+      }
 
       if (n === 1 || !withName) {
         it(`should set ${n === 1 ? 'the' : 'each'} Room's .participants Map to an empty Map`, () => {
@@ -214,7 +246,7 @@ describe('connect', function() {
         (navigator.userAgent === 'Node'
           ? it.skip
           : it
-        )('should eventually update each Participant\'s .tracks Map to contain a Track for every one of its corresponding LocalParticipant\'s LocalTracks', async () => {
+        )('should eventually update each Participant\'s .tracks Map to contain a RemoteTrack for every one of its corresponding LocalParticipant\'s LocalTracks', async () => {
           await Promise.all(flatMap(rooms, ({ participants }) => {
             return [...participants.values()].map(participant => tracksAdded(participant, 2));
           }));
@@ -222,12 +254,10 @@ describe('connect', function() {
             otherRooms.forEach(({ localParticipant }) => {
               const participant = participants.get(localParticipant.sid);
               assert(participant);
-              // WARN(mroberts): Eventually, this property will change; MediaStreamTrack IDs will not be preserved,
-              // and will be supplanted by Track IDs.
-              const tracks = [...participant.tracks.keys()].sort();
-              const localTracks = [...localParticipant.tracks.keys()].sort();
-              assert.equal(tracks.length, localTracks.length);
-              tracks.forEach((track, i) => assert.equal(track, localTracks[i]));
+              const trackSids = [...participant.tracks.values()].map(track => track.sid).sort();
+              const publishedTrackSids = [...localParticipant.publishedTracks.values()].map(track => track.sid).sort();
+              assert.equal(trackSids.length, publishedTrackSids.length);
+              assert.deepEqual(trackSids, publishedTrackSids);
             });
           });
         });
