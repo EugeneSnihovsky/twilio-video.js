@@ -22,7 +22,7 @@ require('./spec/createlocaltracks');
 require('./spec/ecs');
 require('./spec/room');
 require('./spec/localparticipant');
-require('./spec/participant');
+require('./spec/remoteparticipant');
 require('./spec/queueingeventemitter');
 require('./spec/statemachine');
 
@@ -32,6 +32,7 @@ require('./spec/iceserversource/nts');
 require('./spec/media/track');
 require('./spec/media/track/localtrack');
 require('./spec/media/track/publishedtrack');
+require('./spec/media/track/remotetrack');
 
 require('./spec/signaling/v2');
 require('./spec/signaling/v2/cancelableroomsignalingpromise');
